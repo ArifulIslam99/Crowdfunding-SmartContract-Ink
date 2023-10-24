@@ -3,13 +3,14 @@
 mod crowdfunding {
     use ink::prelude::vec::Vec;
     use ink::storage::Mapping;
-    
+
     #[ink(storage)]
     pub struct Crowdfunding {
         manager: AccountId,
         minimum_contribution: Balance,
         approvers: Mapping<AccountId, bool>,
-        requests: Mapping<RequestId, request>
+        requests: Mapping<RequestId, Request>,
+        request_id: RequestId,
     }
     pub type RequestId = u32;
     #[derive(scale::Encode, scale::Decode, Clone)]
@@ -23,11 +24,15 @@ mod crowdfunding {
             ink::storage::traits::StorageLayout
         )
     )]
-    pub struct request {
+ 
+    pub struct Request {
+        request_id: RequestId,
         description: Vec<u8>,
         value: Balance,
         recipient: AccountId,
-        complete: bool
+        complete: bool,
+        voters: Vec<AccountId>,
+        approval_count: u32
     }
 
     impl Crowdfunding {
@@ -41,7 +46,8 @@ mod crowdfunding {
                 manager,
                 minimum_contribution,
                 approvers,
-                requests
+                requests,
+                request_id: 0,
             }
         }
 
@@ -59,17 +65,44 @@ mod crowdfunding {
         }
 
         #[ink(message)]
-        pub fn get_manger_address(&self) -> AccountId{
+        pub fn create_spending_request(
+            &mut self,
+            description: Vec<u8>,
+            value: Balance,
+            recipient: AccountId,
+        ) -> Result<RequestId, PSP22Error> {
+            self.manager_call();
+            let new_request = Request {
+                request_id: self.request_id,
+                description,
+                value,
+                recipient,
+                complete: false,
+                voters: Vec::new(),
+                approval_count: 0
+            };
+
+            self.requests.insert(self.request_id, &new_request);
+            self.increment_request_id();
+            Ok(self.request_id - 1)
+        }
+
+        #[ink(message)]
+        pub fn get_manger_address(&self) -> AccountId {
             self.manager
         }
 
-        
-         fn manager_call(&self) {
+        fn manager_call(&self) {
             assert_eq!(
                 self.manager,
                 self.env().caller(),
                 "Only owner can call this function"
             );
+        }
+
+        pub fn increment_request_id(&mut self) -> RequestId {
+            self.request_id += 1;
+            self.request_id
         }
     }
 
